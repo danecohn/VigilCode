@@ -1,0 +1,14 @@
+# Run with: vigil test examples/tally/test_words.vigil
+use words
+
+work test_counts_words_and_lines() -> Unit:
+    vow counts = count_words("in the beginning\nwas the word\n\n")
+    witness counts.words == 6, "Six words."
+    witness counts.lines == 2, "Blank lines are not counted."
+
+work test_longest_word() -> Unit:
+    witness count_words("a bb ccc").longest == "ccc", "The longest word wins."
+
+work test_empty_text() -> Unit:
+    vow counts = count_words("")
+    witness counts.words == 0 and counts.lines == 0, "Nothing to count."

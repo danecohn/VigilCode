@@ -189,7 +189,7 @@ class Compiler:
                 self.typedefs.append(f'typedef enum {{ {variants} }} {self.ctype(item.name)};')
                 self.typedefs.append(f'static const char *const vt_names_{item.name}[] = {{ {names} }};')
 
-    def compile(self):
+    def compile(self, tests=False):
         self.declare_types()
         for work in self.works:
             if work.name in self.signatures or work.name in RESERVED or work.name in TYPES or work.name in self.user_types or work.name in GENERIC:
@@ -199,7 +199,14 @@ class Compiler:
                 self.check_type(type_, token)
             self.signatures[work.name] = work
         main = self.signatures.get('main')
-        if not main or main.params or main.result not in ('Int', 'Unit'):
+        self.tests = [w for w in self.works if w.name.startswith('test_')]
+        if tests:
+            for work in self.tests:
+                if work.params or work.result != 'Unit':
+                    self.error('A test work takes no parameters and returns Unit: work test_name() -> Unit:', work.token)
+            if not self.tests:
+                raise Diagnostic('No tests found. A test is a work named test_something() -> Unit.')
+        elif not main or main.params or main.result not in ('Int', 'Unit'):
             raise Diagnostic('Declare work main() -> Int: or work main() -> Unit: as the entry point.')
         prototypes = []
         for work in self.works:
@@ -221,7 +228,12 @@ class Compiler:
                 self.line('vt_depth--;')
             self.line('}')
         self.line('int main(int argc, char **argv) { vt_init(argc, argv); atexit(vt_cleanup);')
-        if main.result == 'Int':
+        if tests:
+            # The test runner calls the program once per test, naming the test.
+            for work in self.tests:
+                self.line(f'if (argc == 2 && strcmp(argv[1], {cstr(work.name)}) == 0) {{ vt_work_{work.name}(); fflush(stdout); return 0; }}')
+            self.line('fputs("Name a test to run.\\n", stderr); return 2; }')
+        elif main.result == 'Int':
             self.line('int64_t result=vt_work_main(); fflush(stdout); if(result<0 || result>255) vt_fail("main", "main must return an exit code from 0 to 255."); return (int)result; }')
         else:
             self.line('vt_work_main(); fflush(stdout); return 0; }')
@@ -664,5 +676,10 @@ class Compiler:
             return 'Result[Int]', result
         raise AssertionError(name)
 
-def compile_source(source, filename='<source>', base=None):
-    return Compiler(source, filename, base).compile()
+def compile_source(source, filename='<source>', base=None, tests=False):
+    return Compiler(source, filename, base).compile(tests)
+
+def test_names(source, filename='<source>', base=None):
+    compiler = Compiler(source, filename, base)
+    compiler.compile(tests=True)
+    return [w.name for w in compiler.tests]

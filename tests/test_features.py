@@ -244,6 +244,21 @@ return 0''')
             self.assertRaisesRegex(Diagnostic, 'Could not read module', compile_source, 'use nothing\n' + main('return 0'), 'm.vigil', folder)
             self.assertRaisesRegex(Diagnostic, 'already in use', compile_source, 'use a\nwork twice(n: Int) -> Int:\n    return n\n' + main('return 0'), 'm.vigil', folder)
 
+    def test_test_runner(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder, 'checks.vigil')
+            path.write_text('work test_bad() -> Unit:\n    witness 1 == 2, "One is not two."\n\nwork test_good() -> Unit:\n    pass\n', encoding='utf-8')
+            result = subprocess.run([sys.executable, '-m', 'vigilcode', 'test', str(path)], capture_output=True, encoding='utf-8', cwd=ROOT, timeout=120)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('FAIL test_bad', result.stdout)
+            self.assertIn('One is not two.', result.stdout)
+            self.assertIn('ok   test_good', result.stdout)
+            self.assertIn('1 passed, 1 failed.', result.stdout)
+        result = subprocess.run([sys.executable, '-m', 'vigilcode', 'test', 'examples/tally/test_words.vigil'], capture_output=True, encoding='utf-8', cwd=ROOT, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertRaisesRegex(Diagnostic, 'No tests found', compile_source, main('return 0'), tests=True)
+        self.assertRaisesRegex(Diagnostic, 'takes no parameters', compile_source, 'work test_x(n: Int) -> Unit:\n    pass\n', tests=True)
+
     # Limits and generated code --------------------------------------------------
 
     def test_limits(self):
@@ -263,7 +278,7 @@ return 0''')
         sources = [p for p in (ROOT / 'examples').rglob('*.vigil') if p.name != 'words.vigil']
         for path in sources:
             with self.subTest(example=path.name), tempfile.TemporaryDirectory() as folder:
-                Path(folder, 'main.c').write_text(compile_source(path.read_text(encoding='utf-8'), str(path), path.parent), encoding='utf-8')
+                Path(folder, 'main.c').write_text(compile_source(path.read_text(encoding='utf-8'), str(path), path.parent, tests=path.name.startswith('test_')), encoding='utf-8')
                 shutil.copyfile(ROOT / 'vigilcode/runtime.h', Path(folder, 'runtime.h'))
                 result = subprocess.run([compiler, '-std=c11', '-Wall', '-Wextra', '-Werror', '-fsyntax-only', str(Path(folder, 'main.c'))], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)

@@ -7,15 +7,15 @@ import subprocess
 import sys
 import tempfile
 from . import __version__
-from .compiler import compile_source
+from .compiler import compile_source, test_names
 from .frontend import Diagnostic
 
 
 LIMITS = {'steps': 'VT_MAX_STEPS', 'depth': 'VT_MAX_DEPTH', 'memory': 'VT_MAX_MEMORY', 'output': 'VT_MAX_OUTPUT'}
 
 
-def build(source, output, *, filename='<source>', cc=None, optimize=False, base=None, limits=None):
-    generated = compile_source(source, filename, base)
+def build(source, output, *, filename='<source>', cc=None, optimize=False, base=None, limits=None, tests=False):
+    generated = compile_source(source, filename, base, tests)
     compiler = cc or os.environ.get('CC') or shutil.which('clang') or shutil.which('cc')
     if not compiler:
         raise RuntimeError('No native C compiler found. Install Clang or a C11 compiler, or pass --cc PATH.')
@@ -39,6 +39,25 @@ def build(source, output, *, filename='<source>', cc=None, optimize=False, base=
     return output
 
 
+def run_tests(source, path, base, options):
+    names = test_names(source, str(path), base)
+    failed = 0
+    with tempfile.TemporaryDirectory(prefix='vigil-test-') as folder:
+        binary = build(source, Path(folder) / 'tests', tests=True, **options)
+        for name in names:
+            try:
+                result = subprocess.run([str(binary), name], capture_output=True, timeout=60)
+                ok, detail = result.returncode == 0, result.stderr.decode('utf-8', 'replace').strip()
+            except subprocess.TimeoutExpired:
+                ok, detail = False, 'Did not finish within 60 seconds.'
+            failed += not ok
+            print(f'{"ok  " if ok else "FAIL"} {name}')
+            if not ok and detail:
+                print('     ' + detail.replace('\n', '\n     '))
+    print(f'{len(names) - failed} passed, {failed} failed.')
+    return 1 if failed else 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='vigil', description='VigilCode native compiler')
     parser.add_argument('--version', action='version', version='VigilCode ' + __version__)
@@ -47,12 +66,12 @@ def main(argv=None):
     workbench.add_argument('folder', nargs='?', type=Path, help='Project folder (default: the current folder)')
     workbench.add_argument('--port', type=int, default=8765)
     workbench.add_argument('--no-open', action='store_true', help='Do not open a browser window')
-    for name in ['check', 'emit-c', 'build', 'run']:
+    for name in ['check', 'emit-c', 'build', 'run', 'test']:
         command = commands.add_parser(name)
         command.add_argument('source', type=Path)
         if name in ('build', 'emit-c'):
             command.add_argument('-o', '--output', type=Path)
-        if name in ('build', 'run'):
+        if name in ('build', 'run', 'test'):
             command.add_argument('--cc', help='Path to a C11 compiler (one executable, no shell expansion)')
             command.add_argument('-O', '--optimize', action='store_true')
             command.add_argument('--max-steps', type=int, metavar='N', help='Stop after N work calls and loop steps (default: no limit)')
@@ -74,9 +93,9 @@ def main(argv=None):
     try:
         source = args.source.read_text(encoding='utf-8')
         base = args.source.resolve().parent
-        generated = compile_source(source, str(args.source), base)
+        generated = compile_source(source, str(args.source), base, tests=args.command == 'test')
         options = {}
-        if args.command in ('build', 'run'):
+        if args.command in ('build', 'run', 'test'):
             limits = {k: getattr(args, 'max_' + k) for k in LIMITS if getattr(args, 'max_' + k) is not None}
             if any(v < 0 for v in limits.values()):
                 raise RuntimeError('Limits must be zero or more.')
@@ -99,6 +118,8 @@ def main(argv=None):
             built = build(source, output, **options)
             print(f'Built {built}')
             return 0
+        if args.command == 'test':
+            return run_tests(source, args.source, base, options)
         with tempfile.TemporaryDirectory(prefix='vigil-run-') as folder:
             binary = build(source, Path(folder) / 'program', **options)
             values = args.args[1:] if args.args[:1] == ['--'] else args.args
