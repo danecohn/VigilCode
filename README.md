@@ -65,3 +65,11 @@ The v0.1 runtime limits a program to 1,000,000 work calls/loop steps, 1 MiB outp
 [Claude handoff](docs/CLAUDE-HANDOFF.md) contains the accepted direction, implementation inventory, verification commands and unfinished work. Preserve the existing VigilTech brand artwork; no VigilCode-specific icon has been supplied or invented.
 
 Compiler and runtime: GPL v3 or later; see [LICENSE](LICENSE). Existing upstream license text is preserved. No third-party compiler source has been vendored.
+
+## Editor
+
+`vigil workbench` opens a local editor in your browser (check, run, jump to a problem). On macOS, `sh scripts/install-macos.sh` installs the `vigil` command and a launcher app under your home folder. Windows and Linux installs are not verified yet; see `docs/CLAUDE-HANDOFF.md`.
+
+## Records and enums
+
+See `examples/ledger.vigil`. Records are fixed once built; enums have no payloads yet.

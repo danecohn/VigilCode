@@ -16,7 +16,10 @@ def build(source, output, *, filename='<source>', cc=None, optimize=False):
     compiler = cc or os.environ.get('CC') or shutil.which('clang') or shutil.which('cc')
     if not compiler:
         raise RuntimeError('No native C compiler found. Install Clang or a C11 compiler, or pass --cc PATH.')
-    output = Path(output).resolve()
+    output = Path(output)
+    if os.name == 'nt' and not output.suffix:
+        output = output.with_suffix('.exe')
+    output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='vigil-build-') as folder:
         root = Path(folder)
@@ -73,8 +76,8 @@ def main(argv=None):
             output = args.output or Path('build') / args.source.stem
             if output.resolve() == args.source.resolve():
                 raise RuntimeError('Choose an output different from the source file.')
-            build(source, output, filename=str(args.source), cc=args.cc, optimize=args.optimize)
-            print(f'Built {output}')
+            built = build(source, output, filename=str(args.source), cc=args.cc, optimize=args.optimize)
+            print(f'Built {built}')
             return 0
         with tempfile.TemporaryDirectory(prefix='vigil-run-') as folder:
             binary = build(source, Path(folder) / 'program', filename=str(args.source), cc=args.cc, optimize=args.optimize)

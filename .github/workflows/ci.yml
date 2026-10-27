@@ -4,10 +4,22 @@ on:
   pull_request:
 jobs:
   compiler:
+    name: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - {os: ubuntu-latest, arch: x64}
+          - {os: ubuntu-24.04-arm, arch: arm64}
+          - {os: macos-latest, arch: arm64}
+          - {os: macos-15-intel, arch: x64}
+          # Windows has never been run by the maintainers; failures here are informational until it has.
+          - {os: windows-latest, arch: x64, windows: true}
+          - {os: windows-11-arm, arch: arm64, windows: true}
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.windows == true }}
+    env:
+      CC: ${{ matrix.windows && 'clang' || '' }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -16,3 +28,12 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - run: python -m vigilcode build examples/stewardship.vigil -O -o build/stewardship
       - run: ./build/stewardship
+        shell: bash
+      - name: Package, install the wheel in a clean environment, and run it
+        shell: bash
+        run: |
+          python -m pip install build
+          python -m build --outdir dist .
+          python -m venv /tmp/clean-env
+          /tmp/clean-env/*/pip install dist/*.whl
+          /tmp/clean-env/*/vigil run examples/ledger.vigil
