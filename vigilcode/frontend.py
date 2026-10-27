@@ -39,6 +39,18 @@ class Stmt:
     args: list = field(default_factory=list)
 
 @dataclass
+class Record:
+    name: str
+    fields: list  # (name, type name, token)
+    token: Token
+
+@dataclass
+class Enum:
+    name: str
+    variants: list  # (name, token)
+    token: Token
+
+@dataclass
 class Work:
     name: str
     params: list
@@ -46,8 +58,8 @@ class Work:
     body: list
     token: Token
 
-PATTERN = re.compile(r'(?P<SPACE> +)|(?P<REAL>[0-9]+\.[0-9]+)|(?P<INT>[0-9]+)|(?P<TEXT>"(?:[^"\\\n]|\\.)*")|(?P<NAME>[A-Za-z_][A-Za-z_0-9]*)|(?P<OP>->|==|!=|<=|>=|//|[+*/%<>=():,\-])|(?P<BAD>.)')
-KEYWORDS = set('work vow let discern otherwise while for in return witness covenant pass true false and or not'.split())
+PATTERN = re.compile(r'(?P<SPACE> +)|(?P<REAL>[0-9]+\.[0-9]+)|(?P<INT>[0-9]+)|(?P<TEXT>"(?:[^"\\\n]|\\.)*")|(?P<NAME>[A-Za-z_][A-Za-z_0-9]*)|(?P<OP>->|==|!=|<=|>=|//|[+*/%<>=():,.\-])|(?P<BAD>.)')
+KEYWORDS = set('work record enum vow let discern otherwise while for in return witness covenant pass true false and or not'.split())
 
 def lex(source):
     if source.startswith('\ufeff'):
@@ -123,6 +135,9 @@ class Parser:
     def parse(self):
         works = []
         while self.current.kind != 'EOF':
+            if self.current.kind in ('record', 'enum'):
+                works.append(self.declaration())
+                continue
             start = self.take('work')
             name = self.take('NAME').value
             self.take('(')
@@ -139,6 +154,26 @@ class Parser:
             result = self.take('NAME').value
             works.append(Work(name, params, result, self.block(), start))
         return works
+
+    def declaration(self):
+        start = self.take()
+        name = self.take('NAME').value
+        self.take(':')
+        self.take('NEWLINE')
+        self.take('INDENT')
+        items = []
+        while self.current.kind not in ('DEDENT', 'EOF'):
+            token = self.take('NAME')
+            if start.kind == 'record':
+                self.take(':')
+                items.append((token.value, self.take('NAME').value, token))
+            else:
+                items.append((token.value, token))
+            self.take('NEWLINE')
+        self.take('DEDENT')
+        if not items:
+            raise Diagnostic(f'A {start.kind} needs at least one {"field" if start.kind == "record" else "variant"}.', start)
+        return (Record if start.kind == 'record' else Enum)(name, items, start)
 
     def block(self):
         self.take(':')
@@ -191,7 +226,10 @@ class Parser:
             self.take('=')
             statement = Stmt('assign', token, name, [self.expression()])
         else:
-            statement = Stmt('expression', token, None, [self.expression()])
+            expression = self.expression()
+            if expression.kind == 'field' and self.current.kind == '=':
+                raise Diagnostic('Record fields cannot change. Build a new record instead.', self.current)
+            statement = Stmt('expression', token, None, [expression])
         self.take('NEWLINE')
         return statement
 
@@ -220,6 +258,8 @@ class Parser:
             left = Expr('unary', token, token.kind, [self.expression(3 if token.kind == 'not' else 6)])
         else:
             raise Diagnostic('Expected a value, a work call, or a parenthesized expression.', token)
+        while self.accept('.'):
+            left = Expr('field', self.current, self.take('NAME').value, [left])
         compared = False
         while self.PRECEDENCE.get(self.current.kind, -1) >= minimum:
             operator = self.take()

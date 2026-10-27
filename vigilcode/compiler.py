@@ -2,7 +2,7 @@
 """Type checking and deterministic, left-to-right lowering to portable C11."""
 from dataclasses import dataclass
 import math
-from .frontend import Diagnostic, Parser
+from .frontend import Diagnostic, Enum, Parser, Record
 
 TYPES = {'Int': 'int64_t', 'Real': 'double', 'Bool': 'bool', 'Text': 'const char *', 'Unit': 'void'}
 BUILTINS = {'say', 'length', 'arg', 'arg_count', 'range'}
@@ -19,7 +19,10 @@ class Binding:
 class Compiler:
     def __init__(self, source, filename='<source>'):
         self.source, self.filename = source, filename
-        self.works = Parser(source).parse()
+        items = Parser(source).parse()
+        self.works = [i for i in items if not isinstance(i, (Record, Enum))]
+        self.declared = [i for i in items if isinstance(i, (Record, Enum))]
+        self.user_types = {}
         self.signatures = {}
         self.lines, self.counter, self.scopes = [], 0, []
         self.contract = False
@@ -33,10 +36,18 @@ class Compiler:
     def location(self, token):
         return cstr(f'{self.filename}:{token.line}:{token.column}')
 
+    def ctype(self, type_):
+        if type_ in TYPES:
+            return TYPES[type_]
+        return f'vt_{"rec" if isinstance(self.user_types[type_], Record) else "enum"}_{type_}'
+
+    def known(self, type_):
+        return type_ in TYPES or type_ in self.user_types
+
     def temp(self, type_, expression):
         self.counter += 1
         name = f'vt_tmp_{self.counter}'
-        self.line(f'{TYPES[type_]} {name} = {expression};')
+        self.line(f'{self.ctype(type_)} {name} = {expression};')
         return type_, name
 
     def lookup(self, name, token):
@@ -46,9 +57,9 @@ class Compiler:
         self.error(f'{name!r} has not been declared in this scope.', token)
 
     def bind(self, name, type_, mutable, token):
-        if type_ not in TYPES or type_ == 'Unit':
-            self.error('Values and parameters need Int, Real, Bool, or Text.', token)
-        if name in BUILTINS or name in self.signatures or name in TYPES:
+        if not self.known(type_) or type_ == 'Unit':
+            self.error(f'{type_!r} is not a type that a value can have.', token)
+        if name in BUILTINS or name in self.signatures or name in TYPES or name in self.user_types:
             self.error(f'{name!r} is reserved for a type, work, or built-in.', token)
         if any(name in scope for scope in self.scopes):
             self.error(f'{name!r} is already declared; shadowing is not allowed.', token)
@@ -61,31 +72,63 @@ class Compiler:
         if actual != expected:
             self.error(f'Expected {expected}; found {actual}.', token)
 
+    def declare_types(self):
+        names = set()
+        for item in self.declared:
+            if item.name in self.user_types or item.name in TYPES or item.name in BUILTINS:
+                self.error(f'The type name {item.name!r} is already in use.', item.token)
+            seen = set()
+            if isinstance(item, Record):
+                for name, type_, token in item.fields:
+                    # A field's type must be declared earlier, which also rules out recursive records.
+                    if not self.known(type_) or type_ == 'Unit':
+                        self.error(f'{type_!r} is not a type a field can have; declare it before {item.name}.', token)
+                    if name in seen:
+                        self.error(f'The field {name!r} is declared twice.', token)
+                    seen.add(name)
+            else:
+                for name, token in item.variants:
+                    if name in seen:
+                        self.error(f'The variant {name!r} is declared twice.', token)
+                    seen.add(name)
+            self.user_types[item.name] = item
+            self.line_types = getattr(self, 'line_types', [])
+            if isinstance(item, Record):
+                members = ' '.join(f'{self.ctype(t)} f_{n};' for n, t, _ in item.fields)
+                self.line_types.append(f'typedef struct {{ {members} }} {self.ctype(item.name)};')
+            else:
+                variants = ', '.join(f'vt_variant_{item.name}_{n}' for n, _ in item.variants)
+                names_c = ', '.join(cstr(n) for n, _ in item.variants)
+                self.line_types.append(f'typedef enum {{ {variants} }} {self.ctype(item.name)};')
+                self.line_types.append(f'static const char *const vt_names_{item.name}[] = {{ {names_c} }};')
+
     def compile(self):
+        self.declare_types()
         for work in self.works:
-            if work.name in self.signatures or work.name in BUILTINS or work.name in TYPES:
+            if work.name in self.signatures or work.name in BUILTINS or work.name in TYPES or work.name in self.user_types:
                 self.error(f'The work name {work.name!r} is already in use.', work.token)
-            if work.result not in TYPES:
+            if not self.known(work.result):
                 self.error(f'Unknown result type {work.result!r}.', work.token)
             for _, type_, token in work.params:
-                if type_ not in TYPES or type_ == 'Unit':
-                    self.error('Parameters need Int, Real, Bool, or Text.', token)
+                if not self.known(type_) or type_ == 'Unit':
+                    self.error(f'{type_!r} is not a type that a parameter can have.', token)
             self.signatures[work.name] = work
         main = self.signatures.get('main')
         if not main or main.params or main.result not in ('Int', 'Unit'):
             raise Diagnostic('Declare work main() -> Int: or work main() -> Unit: as the entry point.')
         self.line('#include "runtime.h"')
+        self.lines.extend(getattr(self, 'line_types', []))
         for work in self.works:
-            params = ', '.join(TYPES[t] for _, t, _ in work.params) or 'void'
-            self.line(f'{TYPES[work.result]} vt_work_{work.name}({params});')
+            params = ', '.join(self.ctype(t) for _, t, _ in work.params) or 'void'
+            self.line(f'{self.ctype(work.result)} vt_work_{work.name}({params});')
         for work in self.works:
             self.scopes = [{}]
             self.work = work
             params = []
             for name, type_, token in work.params:
                 value = self.bind(name, type_, False, token)
-                params.append(f'{TYPES[type_]} {value.name}')
-            self.line(f'{TYPES[work.result]} vt_work_{work.name}({", ".join(params) or "void"}) {{')
+                params.append(f'{self.ctype(type_)} {value.name}')
+            self.line(f'{self.ctype(work.result)} vt_work_{work.name}({", ".join(params) or "void"}) {{')
             self.line(f'vt_step({self.location(work.token)}); vt_enter({self.location(work.token)});')
             returns = self.block(work.body, root=True)
             if work.result != 'Unit' and not returns:
@@ -123,7 +166,7 @@ class Compiler:
             if annotation:
                 self.expect(type_, annotation, token)
             binding = self.bind(name, type_, kind == 'let', token)
-            self.line(f'{TYPES[type_]} {binding.name} = {code};')
+            self.line(f'{self.ctype(type_)} {binding.name} = {code};')
         elif kind == 'assign':
             binding = self.lookup(s.value, token)
             if not binding.mutable:
@@ -206,6 +249,21 @@ class Compiler:
             binding = self.lookup(e.value, token)
             # Snapshot every read: later call arguments may have observable effects.
             return self.temp(binding.type, binding.name)
+        if kind == 'field':
+            base = e.args[0]
+            if base.kind == 'name' and isinstance(self.user_types.get(base.value), Enum):
+                enum = self.user_types[base.value]
+                if e.value not in [v for v, _ in enum.variants]:
+                    self.error(f'{base.value} has no variant {e.value!r}.', token)
+                return self.temp(base.value, f'vt_variant_{base.value}_{e.value}')
+            type_, code = self.expression(base)
+            record = self.user_types.get(type_)
+            if not isinstance(record, Record):
+                self.error(f'Only a record has fields; this value is {type_}.', token)
+            for name, field_type, _ in record.fields:
+                if name == e.value:
+                    return self.temp(field_type, f'{code}.f_{name}')
+            self.error(f'{type_} has no field {e.value!r}.', token)
         if kind == 'unary':
             if e.value == '-' and e.args[0].kind == 'int' and int(e.args[0].value) == 9223372036854775808:
                 return self.temp('Int', 'INT64_MIN')
@@ -235,6 +293,8 @@ class Compiler:
                     return self.temp('Text', f'vt_concat({left}, {right}, {self.location(token)})')
                 if op in ('==', '!=', '<', '>', '<=', '>='):
                     return self.temp('Bool', f'(strcmp({left}, {right}) {op} 0)')
+            if left_type == right_type and isinstance(self.user_types.get(left_type), Enum) and op in ('==', '!='):
+                return self.temp('Bool', f'({left} {op} {right})')
             if left_type == right_type == 'Bool' and op in ('==', '!='):
                 return self.temp('Bool', f'({left} {op} {right})')
             if left_type not in ('Int', 'Real') or right_type not in ('Int', 'Real'):
@@ -252,7 +312,7 @@ class Compiler:
             name = e.value
             if name == 'range':
                 self.error('range is available only in a for statement.', token)
-            if self.contract and name != 'length':
+            if self.contract and name != 'length' and not isinstance(self.user_types.get(name), Record):
                 self.error('Covenants must be pure: use parameters, literals, operators, and length.', token)
             if name in ('say', 'length', 'arg', 'arg_count'):
                 expected = 0 if name == 'arg_count' else 1
@@ -261,15 +321,28 @@ class Compiler:
                 values = [self.expression(arg) for arg in e.args]
                 if name == 'say':
                     type_, value = values[0]
-                    if type_ == 'Unit':
-                        self.error('say needs a printable value.', token)
-                    self.line(f'vt_say_{type_.lower()}({value});')
+                    if type_ in self.user_types and isinstance(self.user_types[type_], Enum):
+                        self.line(f'vt_say_text(vt_names_{type_}[{value}]);')
+                    elif type_ not in TYPES or type_ == 'Unit':
+                        self.error('say prints Int, Real, Bool, Text, or an enum variant. Print a record field instead.', token)
+                    else:
+                        self.line(f'vt_say_{type_.lower()}({value});')
                     return 'Unit', ''
                 if name == 'arg_count':
                     return self.temp('Int', '(int64_t)(vt_argc-1)')
                 type_, value = values[0]
                 self.expect(type_, 'Text' if name == 'length' else 'Int', token)
                 return self.temp('Int' if name == 'length' else 'Text', f'vt_{name}({value}, {self.location(token)})')
+            record = self.user_types.get(name)
+            if isinstance(record, Record):
+                if len(e.args) != len(record.fields):
+                    self.error(f'{name} needs {len(record.fields)} value(s), one for each field.', token)
+                values = []
+                for arg, (field_name, type_, _) in zip(e.args, record.fields):
+                    actual, value = self.expression(arg)
+                    self.expect(actual, type_, arg.token)
+                    values.append(value)
+                return self.temp(name, f'({self.ctype(name)}){{{", ".join(values)}}}')
             work = self.signatures.get(name)
             if not work:
                 self.error(f'Unknown work {name!r}.', token)

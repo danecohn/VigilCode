@@ -1,0 +1,25 @@
+# Records and enums. A record is fixed once built; to change a value, build a new one.
+enum Season:
+    Planting
+    Harvest
+
+record Share:
+    owner: Text
+    amount: Int
+
+work with_amount(share: Share, amount: Int) -> Share:
+    return Share(share.owner, amount)
+
+work describe(season: Season) -> Text:
+    discern season == Season.Harvest:
+        return "harvest"
+    return "planting"
+
+work main() -> Int:
+    vow first = Share("Ana", 5)
+    vow second = with_amount(first, first.amount + 2)
+    witness first.amount == 5, "The first share must not change."
+    say(second.owner + " holds " + describe(Season.Harvest))
+    say(second.amount)
+    say(Season.Planting)
+    return 0

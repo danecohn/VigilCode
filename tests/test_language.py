@@ -19,7 +19,7 @@ class LanguageTests(unittest.TestCase):
             compile_source(source)
 
     def test_examples_native(self):
-        expected = {'hello': 'Peace be with you.\n', 'stewardship': 'All shares accounted for.\n', 'fibonacci': '55\n'}
+        expected = {'hello': 'Peace be with you.\n', 'stewardship': 'All shares accounted for.\n', 'fibonacci': '55\n', 'ledger': 'Ana holds harvest\n7\nPlanting\n'}
         for name, output in expected.items():
             with self.subTest(name=name):
                 result = self.program(Path('examples/'+name+'.vigil').read_text())
@@ -126,6 +126,44 @@ class LanguageTests(unittest.TestCase):
                 pass
             except Exception as error:
                 self.fail(f'{type(error).__name__}: {error} for {source!r}')
+
+    def test_records_are_immutable_and_typed(self):
+        head = 'record Share:\n    owner: Text\n    amount: Int\n\nwork main() -> Int:\n'
+        self.reject(head + '    vow s = Share("Ana", 5)\n    s.amount = 6\n    return 0\n', 'cannot change')
+        self.reject(head + '    let s = Share("Ana", 5)\n    s = Share("Bo", 1)\n    s.owner = "x"\n    return 0\n', 'cannot change')
+        self.reject(head + '    vow s = Share("Ana", "5")\n    return 0\n', 'Expected Int')
+        self.reject(head + '    vow s = Share("Ana")\n    return 0\n', 'one for each field')
+        self.reject(head + '    vow s = Share("Ana", 5)\n    say(s.missing)\n    return 0\n', 'no field')
+        self.reject(head + '    vow s = Share("Ana", 5)\n    say(s)\n    return 0\n', 'Print a record field')
+        self.reject(head + '    vow s = Share("Ana", 5)\n    say(s == s)\n    return 0\n', 'does not accept')
+        self.reject(head + '    say(1.amount)\n    return 0\n', 'Only a record')
+
+    def test_record_declarations(self):
+        self.reject('record A:\n    x: B\n\nwork main() -> Int:\n    return 0\n', 'declare it before')
+        self.reject('record A:\n    x: A\n\nwork main() -> Int:\n    return 0\n', 'declare it before')
+        self.reject('record A:\n    x: Int\n    x: Int\n\nwork main() -> Int:\n    return 0\n', 'twice')
+        self.reject('record A:\n\nwork main() -> Int:\n    return 0\n', 'Expected')
+        self.reject('record Int:\n    x: Int\n\nwork main() -> Int:\n    return 0\n', 'already in use')
+        self.reject('record A:\n    x: Int\n\nwork A() -> Int:\n    return 0\n\nwork main() -> Int:\n    return 0\n', 'already in use')
+
+    def test_nested_records_and_covenants(self):
+        source = ('record Point:\n    x: Int\n    y: Int\n\nrecord Line:\n    start: Point\n    end: Point\n\n'
+                  'work width(line: Line) -> Int:\n    covenant line.end.x >= line.start.x, "The line must run rightwards."\n'
+                  '    return line.end.x - line.start.x\n\n'
+                  'work main() -> Int:\n    say(width(Line(Point(1, 2), Point(4, 9))))\n    say(width(Line(Point(4, 0), Point(1, 0))))\n    return 0\n')
+        result = self.program(source, optimize=True)
+        self.assertEqual(result.stdout, '3\n')
+        self.assertIn('covenant not satisfied: The line must run rightwards.', result.stderr)
+
+    def test_enums(self):
+        head = 'enum Mode:\n    Open\n    Closed\n\nwork main() -> Int:\n'
+        result = self.program(head + '    say(Mode.Open == Mode.Closed)\n    say(Mode.Closed != Mode.Open)\n    say(Mode.Closed)\n    return 0\n')
+        self.assertEqual(result.stdout, 'false\ntrue\nClosed\n')
+        self.reject(head + '    say(Mode.Ajar)\n    return 0\n', 'no variant')
+        self.reject(head + '    say(Mode.Open < Mode.Closed)\n    return 0\n', 'does not accept')
+        self.reject(head + '    say(Mode.Open == 0)\n    return 0\n', 'does not accept')
+        self.reject('enum Mode:\n    Open\n    Open\n\nwork main() -> Int:\n    return 0\n', 'twice')
+        self.reject(head + '    vow Mode = 1\n    return 0\n', 'reserved')
 
 if __name__ == '__main__':
     unittest.main()
