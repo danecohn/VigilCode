@@ -36,6 +36,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='vigil', description='VigilCode native compiler')
     parser.add_argument('--version', action='version', version='VigilCode ' + __version__)
     commands = parser.add_subparsers(dest='command', required=True)
+    workbench = commands.add_parser('workbench', help='Open the local editor in your browser')
+    workbench.add_argument('--port', type=int, default=8765)
+    workbench.add_argument('--no-open', action='store_true', help='Do not open a browser window')
     for name in ['check', 'emit-c', 'build', 'run']:
         command = commands.add_parser(name)
         command.add_argument('source', type=Path)
@@ -47,6 +50,10 @@ def main(argv=None):
         if name == 'run':
             command.add_argument('args', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
+    if args.command == 'workbench':
+        from .workbench import serve
+        serve(args.port, open_browser=not args.no_open)
+        return 0
     source = ''
     try:
         source = args.source.read_text(encoding='utf-8')

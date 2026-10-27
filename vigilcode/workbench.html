@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VigilCode Workbench</title>
+<style>
+/* Neutral placeholder tokens. Map these to the VigilTech palette once it is supplied. */
+:root { --bg:#faf9f6; --panel:#ffffff; --ink:#1f1d1a; --muted:#5c574f; --line:#d8d3c8; --accent:#5a2d3a; --accent-ink:#ffffff; --error:#9b1c1c; --ok:#1d5c34; --gutter:#f1eee6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#17161a; --panel:#1f1e23; --ink:#ece9e2; --muted:#a9a49a; --line:#35333a; --accent:#d8a7b4; --accent-ink:#17161a; --error:#ff9b9b; --ok:#8fd6a4; --gutter:#1a191d; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, sans-serif; display:flex; flex-direction:column; min-height:100vh; }
+header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); }
+h1 { font-size:1.1rem; margin:0 auto 0 0; font-weight:600; }
+button, select { font:inherit; padding:6px 14px; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--ink); cursor:pointer; }
+button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+button:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+main { flex:1; display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); gap:16px; padding:16px; }
+@media (max-width:800px) { main { grid-template-columns:1fr; } }
+.editor { display:flex; border:1px solid var(--line); border-radius:6px; background:var(--panel); min-height:360px; overflow:hidden; }
+#gutter { padding:10px 8px; background:var(--gutter); color:var(--muted); text-align:right; font:14px/1.5 ui-monospace, Menlo, Consolas, monospace; user-select:none; overflow:hidden; white-space:pre; }
+#gutter .bad { color:var(--error); font-weight:700; }
+#code { flex:1; border:0; resize:none; padding:10px; font:14px/1.5 ui-monospace, Menlo, Consolas, monospace; background:transparent; color:var(--ink); white-space:pre; overflow:auto; tab-size:4; }
+section h2 { font-size:.9rem; margin:0 0 6px; color:var(--muted); font-weight:600; text-transform:none; }
+pre, #problems { margin:0 0 16px; padding:10px; border:1px solid var(--line); border-radius:6px; background:var(--panel); min-height:3em; white-space:pre-wrap; overflow-wrap:anywhere; font:14px/1.5 ui-monospace, Menlo, Consolas, monospace; }
+#problems { list-style:none; font-family:inherit; }
+#problems button { border:0; background:none; padding:0; color:var(--error); text-align:left; text-decoration:underline; }
+#status { padding:8px 16px; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem; }
+#status.fail { color:var(--error); } #status.pass { color:var(--ok); }
+.hint { color:var(--muted); font-size:.85rem; margin:6px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>VigilCode Workbench</h1>
+  <label for="file" class="hint">Open</label><input id="file" type="file" accept=".vigil,text/plain">
+  <button id="check" type="button">Check</button>
+  <button id="run" type="button" class="primary">Run</button>
+  <button id="save" type="button">Save</button>
+</header>
+<main>
+  <section aria-label="Editor">
+    <div class="editor"><div id="gutter" aria-hidden="true">1</div><textarea id="code" spellcheck="false" aria-label="VigilCode source" autocomplete="off" autocapitalize="off"></textarea></div>
+    <p class="hint">Run: Ctrl or Cmd + Enter. Tab inserts spaces; press Escape, then Tab, to move focus out of the editor.</p>
+  </section>
+  <section aria-label="Results">
+    <h2>Problems</h2><ul id="problems" aria-live="polite"><li>None yet.</li></ul>
+    <h2>Output</h2><pre id="out" aria-live="polite"></pre>
+    <h2>Errors</h2><pre id="err"></pre>
+  </section>
+</main>
+<div id="status" role="status" aria-live="polite">Ready.</div>
+<script>
+const TOKEN = "__TOKEN__";
+const $ = id => document.getElementById(id);
+const code = $('code');
+const SAMPLE = 'work main() -> Int:\n    say("Peace be with you.")\n    return 0\n';
+let badLine = null, escaped = false;
+try { code.value = localStorage.getItem('vigilcode.draft') || SAMPLE; } catch (e) { code.value = SAMPLE; }
+
+function gutter() {
+  const n = code.value.split('\n').length;
+  $('gutter').innerHTML = Array.from({length:n}, (_, i) => i + 1 === badLine ? '<span class="bad">' + (i + 1) + '</span>' : i + 1).join('\n');
+  $('gutter').scrollTop = code.scrollTop;
+}
+function status(text, kind) { $('status').textContent = text; $('status').className = kind || ''; }
+function show(r) {
+  badLine = null;
+  const list = $('problems'); list.textContent = '';
+  if (!r.diagnostics.length) { const li = document.createElement('li'); li.textContent = 'None.'; list.append(li); }
+  for (const d of r.diagnostics) {
+    const li = document.createElement('li'), b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = (d.line ? 'Line ' + d.line + ', column ' + d.column + ': ' : '') + d.message;
+    if (d.line) { badLine = badLine || d.line; b.onclick = () => jump(d.line, d.column); }
+    li.append(b); list.append(li);
+  }
+  $('out').textContent = r.stdout || ''; $('err').textContent = r.stderr || '';
+  gutter();
+}
+function jump(line, column) {
+  const lines = code.value.split('\n');
+  const at = lines.slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0) + Math.max(0, column - 1);
+  code.focus(); code.setSelectionRange(at, at);
+}
+async function call(path, extra) {
+  const res = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json', 'X-Vigil-Token':TOKEN}, body:JSON.stringify(Object.assign({source:code.value}, extra))});
+  if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+  return res.json();
+}
+async function act(path, label) {
+  status(label + '…');
+  try {
+    const r = await call(path);
+    show(r);
+    if (!r.diagnostics.length && path === '/api/check') status('Checks passed.', 'pass');
+    else if (r.diagnostics.length) status(r.diagnostics.length + ' problem to fix.', 'fail');
+    else status(r.ok ? 'Finished with exit code 0.' : 'Finished with exit code ' + r.exit + '.', r.ok ? 'pass' : 'fail');
+  } catch (e) { status('Could not reach the workbench: ' + e.message, 'fail'); }
+}
+$('check').onclick = () => act('/api/check', 'Checking');
+$('run').onclick = () => act('/api/run', 'Running');
+$('save').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([code.value], {type:'text/plain'}));
+  a.download = 'program.vigil'; a.click(); URL.revokeObjectURL(a.href);
+};
+$('file').onchange = async e => { const f = e.target.files[0]; if (f) { code.value = await f.text(); gutter(); } };
+code.addEventListener('input', () => {
+  gutter();
+  try { localStorage.setItem('vigilcode.draft', code.value); } catch (e) {}
+});
+code.addEventListener('scroll', () => { $('gutter').scrollTop = code.scrollTop; });
+code.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); $('run').click(); }
+  else if (e.key === 'Escape') escaped = true;
+  else if (e.key === 'Tab' && !escaped && !e.shiftKey) { e.preventDefault(); document.execCommand('insertText', false, '    '); }
+  else escaped = false;
+});
+gutter();
+</script>
+</body>
+</html>
