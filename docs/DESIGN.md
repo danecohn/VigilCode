@@ -29,6 +29,6 @@ Do not equate software errors with sin or claim that code is morally approved by
 
 C is the initial backend. Reusing a native code generator does not make VigilCode a Python dialect: its syntax and semantics are handled by its own frontend. Do not claim a machine-code backend or self-hosting implementation exists. LLVM or a direct backend is a later option, not required for the initial native language.
 
-## UI direction, not yet built
+## Workbench
 
-A dedicated editor/workbench can weave in a restrained Christian/Catholic visual language and terminology. Use the supplied VigilTech typography, tokens and exact corporate artwork; request a product icon instead of inventing one. Prioritize readable code, accessible contrast, keyboard controls, diagnostics and a visible build/run state. The earlier suite-wide ban on religious copy is superseded specifically for this user-requested Christian language. Keep Claude's unrelated rebrand work isolated.
+`vigil workbench` is the editor (see the handoff for what it does). It uses the VigilTech night palette and the Vigil Sans font from github.com/danecohn/vigilicons, unmodified. The interface is plain and quiet: readable code, accessible contrast, keyboard control, clear diagnostics and a visible build/run state. Religious terms appear only where the language itself uses them. A VigilCode product icon has not been supplied; do not invent one. Keep the VigilTech suite rebrand separate.
