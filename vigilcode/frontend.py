@@ -50,6 +50,8 @@ PATTERN = re.compile(r'(?P<SPACE> +)|(?P<REAL>[0-9]+\.[0-9]+)|(?P<INT>[0-9]+)|(?
 KEYWORDS = set('work vow let discern otherwise while for in return witness covenant pass true false and or not'.split())
 
 def lex(source):
+    if source.startswith('\ufeff'):
+        source = source[1:]
     tokens, indents = [], [0]
     for number, line in enumerate(source.splitlines(), 1):
         if '\t' in line:

@@ -86,10 +86,12 @@ class Compiler:
                 value = self.bind(name, type_, False, token)
                 params.append(f'{TYPES[type_]} {value.name}')
             self.line(f'{TYPES[work.result]} vt_work_{work.name}({", ".join(params) or "void"}) {{')
-            self.line(f'vt_step({self.location(work.token)});')
+            self.line(f'vt_step({self.location(work.token)}); vt_enter({self.location(work.token)});')
             returns = self.block(work.body, root=True)
             if work.result != 'Unit' and not returns:
                 self.error(f'{work.name!r} must return {work.result} on every path.', work.token)
+            if work.result == 'Unit' and not returns:
+                self.line('vt_depth--;')
             self.line('}')
         self.line('int main(int argc, char **argv) { vt_argc=argc; vt_argv=argv; atexit(vt_cleanup);')
         if main.result == 'Int':
@@ -173,7 +175,7 @@ class Compiler:
         elif kind == 'return':
             type_, code = self.expression(s.args[0]) if s.args else ('Unit', '')
             self.expect(type_, self.work.result, token)
-            self.line('return' + (' ' + code if type_ != 'Unit' else '') + ';')
+            self.line('{ vt_depth--; return' + (' ' + code if type_ != 'Unit' else '') + '; }')
             return True
         elif kind == 'expression':
             if s.args[0].kind != 'call':

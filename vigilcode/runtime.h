@@ -13,7 +13,7 @@
 
 static int vt_argc;
 static char **vt_argv;
-static uint64_t vt_steps=0, vt_output=0;
+static uint64_t vt_steps=0, vt_output=0, vt_depth=0;
 static size_t vt_memory=0;
 typedef struct vt_allocation { struct vt_allocation *next; } vt_allocation;
 static vt_allocation *vt_allocations=NULL;
@@ -26,6 +26,8 @@ static void vt_obligation(const char *where, const char *kind, const char *messa
 }
 /* Explicit v0.1 execution limits; resource policy can become configurable later. */
 static void vt_step(const char *where) { if(++vt_steps>1000000) vt_fail(where,"Execution limit reached (1,000,000 work calls/loop steps)."); }
+/* Call depth is bounded well inside a 1 MiB stack (the smallest default, on Windows). */
+static void vt_enter(const char *where) { if(++vt_depth>2000) vt_fail(where,"Call depth limit reached (2,000 nested work calls)."); }
 static void vt_write(const char *text) {
     size_t n=strlen(text);
     if(n>1048576 || vt_output>1048576-n) vt_fail("output","Output limit reached (1 MiB).");

@@ -2,6 +2,7 @@
 import subprocess
 import tempfile
 from pathlib import Path
+import random
 import unittest
 from vigilcode.cli import build
 from vigilcode.compiler import compile_source
@@ -81,6 +82,50 @@ class LanguageTests(unittest.TestCase):
     def test_bad_indentation_and_text(self):
         self.reject('work main() -> Int:\n\treturn 0\n', 'tabs')
         self.reject('work main() -> Int:\n    say("\\u0000")\n    return 0\n', 'NUL')
+
+    def test_recursion_is_bounded(self):
+        source = 'work f(n: Int) -> Int:\n    return f(n + 1)\n\nwork main() -> Int:\n    say(f(0))\n    return 0\n'
+        for optimize in (False, True):
+            result = self.program(source, optimize=optimize)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('Call depth limit', result.stderr)
+        # Depth returns to zero after calls complete, including Unit works that fall off the end.
+        source = 'work ping() -> Unit:\n    pass\n\nwork main() -> Int:\n    for i in range(5000):\n        ping()\n    return 0\n'
+        self.assertEqual(self.program(source).returncode, 0)
+
+    def test_deep_but_allowed_recursion(self):
+        source = 'work down(n: Int) -> Int:\n    discern n == 0:\n        return 0\n    return 1 + down(n - 1)\n\nwork main() -> Int:\n    say(down(1900))\n    return 0\n'
+        self.assertEqual(self.program(source).stdout, '1900\n')
+
+    def test_unicode_bom_and_line_endings(self):
+        result = self.program('\ufeffwork main() -> Int:\r\n    say("caf\\u00e9 \\ud83d\\ude4f")\r\n    return 0\r\n')
+        self.assertEqual(result.stdout, 'caf\u00e9 \U0001f64f\n')
+        self.reject('work main() -> Int:\n    say("\\ud800")\n    return 0\n', 'valid UTF-8')
+
+    def test_literal_and_syntax_errors(self):
+        self.reject('work main() -> Int:\n    say(99999999999999999999)\n    return 0\n', 'too large')
+        self.reject('work main() -> Int:\n    say(1e3)\n    return 0\n', "Expected '\\)'")
+        self.reject('', 'entry point')
+
+    def test_mutated_sources_only_raise_diagnostics(self):
+        seeds = [path.read_text() for path in sorted(Path('examples').glob('*.vigil'))]
+        alphabet = list(' \n():,->+*/%=<>"\\#\t0123456789abcwork vow let \u00e9.')
+        rnd = random.Random(1)
+        for _ in range(3000):
+            text = list(rnd.choice(seeds))
+            for _ in range(rnd.randint(1, 4)):
+                position = rnd.randrange(len(text) + 1)
+                if rnd.random() < 0.4 and text:
+                    del text[min(position, len(text) - 1)]
+                else:
+                    text.insert(position, rnd.choice(alphabet))
+            source = ''.join(text)
+            try:
+                compile_source(source)
+            except Diagnostic:
+                pass
+            except Exception as error:
+                self.fail(f'{type(error).__name__}: {error} for {source!r}')
 
 if __name__ == '__main__':
     unittest.main()
