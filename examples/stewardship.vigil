@@ -1,0 +1,16 @@
+work share(total: Int, people: Int) -> Int:
+    covenant total >= 0, "The available amount must not be negative."
+    covenant people > 0, "There must be someone to receive a share."
+    return total // people
+
+work main() -> Int:
+    vow each = share(35, 7)
+    witness each == 5, "Each person should receive five."
+    let distributed = 0
+    for person in range(7):
+        distributed = distributed + each
+    discern distributed == 35:
+        say("All shares accounted for.")
+    otherwise:
+        say("Review the distribution.")
+    return 0

@@ -1,0 +1,5 @@
+# A complete VigilCode program. Compile it to a native executable.
+work main() -> Int:
+    vow greeting: Text = "Peace be with you."
+    say(greeting)
+    return 0

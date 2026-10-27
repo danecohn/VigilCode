@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vigilcode"
+version = "0.1.0"
+description = "An original, Christian and Catholic-inspired native programming language"
+requires-python = ">=3.10"
+license = {text = "GPL-3.0-or-later"}
+authors = [{name = "VigilTech"}]
+
+[project.scripts]
+vigil = "vigilcode.cli:main"
+vigilcode = "vigilcode.cli:main"
+
+[tool.setuptools.package-data]
+vigilcode = ["runtime.h"]

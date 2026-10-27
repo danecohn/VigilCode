@@ -1,0 +1,10 @@
+work fibonacci(n: Int) -> Int:
+    covenant n >= 0, "Use a non-negative index."
+    discern n < 2:
+        return n
+    otherwise:
+        return fibonacci(n - 1) + fibonacci(n - 2)
+
+work main() -> Int:
+    say(fibonacci(10))
+    return 0
