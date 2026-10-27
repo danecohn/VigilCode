@@ -42,6 +42,29 @@ jobs:
         run: |
           python -m pip install build
           python -m build --outdir dist .
-          python -m venv /tmp/clean-env
-          /tmp/clean-env/*/pip install dist/*.whl
-          /tmp/clean-env/*/vigil run examples/ledger.vigil
+          python -m venv "$RUNNER_TEMP/clean-env"
+          "$RUNNER_TEMP"/clean-env/*/pip install dist/*.whl
+          "$RUNNER_TEMP"/clean-env/*/vigil run examples/ledger.vigil
+          "$RUNNER_TEMP"/clean-env/*/vigil test examples/tally/test_words.vigil
+      - name: Per-user install script (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sh scripts/install-linux.sh
+          ~/.local/bin/vigil run "$HOME/VigilCode Projects/hello.vigil"
+          test -f ~/.local/share/applications/vigilcode-workbench.desktop
+          sh scripts/uninstall-linux.sh
+      - name: Per-user install script (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sh scripts/install-macos.sh
+          ~/.local/bin/vigil run "$HOME/VigilCode Projects/hello.vigil"
+          test -x "$HOME/Applications/VigilCode Workbench.app/Contents/MacOS/workbench"
+          sh scripts/uninstall-macos.sh
+      - name: Per-user install script (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/install-windows.ps1
+          & "$env:LOCALAPPDATA\VigilCode\bin\vigil.cmd" run "$env:USERPROFILE\VigilCode Projects\hello.vigil"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          ./scripts/uninstall-windows.ps1

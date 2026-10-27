@@ -3,4 +3,4 @@
 set -eu
 rm -rf "$HOME/Library/Application Support/VigilCode" "$HOME/Applications/VigilCode Workbench.app"
 [ -L "$HOME/.local/bin/vigil" ] && rm "$HOME/.local/bin/vigil"
-echo "VigilCode removed."
+echo "VigilCode removed. Your projects in ~/VigilCode Projects were left in place."

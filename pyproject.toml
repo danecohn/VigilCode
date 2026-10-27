@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "vigilcode"
-version = "0.1.0"
+version = "0.2.0"
 description = "An original, Christian and Catholic-inspired native programming language"
 requires-python = ">=3.9"
-license = {text = "GPL-3.0-or-later"}
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "vigilcode/fonts/OFL.txt"]
 authors = [{name = "VigilTech"}]
 
 [project.scripts]
