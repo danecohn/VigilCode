@@ -11,8 +11,11 @@ from .compiler import compile_source
 from .frontend import Diagnostic
 
 
-def build(source, output, *, filename='<source>', cc=None, optimize=False):
-    generated = compile_source(source, filename)
+LIMITS = {'steps': 'VT_MAX_STEPS', 'depth': 'VT_MAX_DEPTH', 'memory': 'VT_MAX_MEMORY', 'output': 'VT_MAX_OUTPUT'}
+
+
+def build(source, output, *, filename='<source>', cc=None, optimize=False, base=None, limits=None):
+    generated = compile_source(source, filename, base)
     compiler = cc or os.environ.get('CC') or shutil.which('clang') or shutil.which('cc')
     if not compiler:
         raise RuntimeError('No native C compiler found. Install Clang or a C11 compiler, or pass --cc PATH.')
@@ -26,7 +29,8 @@ def build(source, output, *, filename='<source>', cc=None, optimize=False):
         (root / 'main.c').write_text(generated, encoding='utf-8')
         shutil.copyfile(Path(__file__).with_name('runtime.h'), root / 'runtime.h')
         binary = root / ('program.exe' if os.name == 'nt' else 'program')
-        command = [compiler, '-std=c11', '-O2' if optimize else '-O0', str(root / 'main.c'), '-o', str(binary)]
+        defines = [f'-D{LIMITS[k]}={int(v)}' for k, v in (limits or {}).items()]
+        command = [compiler, '-std=c11', '-O2' if optimize else '-O0', *defines, str(root / 'main.c'), '-o', str(binary)]
         result = subprocess.run(command, capture_output=True, text=True, timeout=60)
         if result.returncode:
             raise RuntimeError('Native compiler failed:\n' + result.stderr)
@@ -50,6 +54,10 @@ def main(argv=None):
         if name in ('build', 'run'):
             command.add_argument('--cc', help='Path to a C11 compiler (one executable, no shell expansion)')
             command.add_argument('-O', '--optimize', action='store_true')
+            command.add_argument('--max-steps', type=int, metavar='N', help='Stop after N work calls and loop steps (default: no limit)')
+            command.add_argument('--max-depth', type=int, metavar='N', help='Nested work call limit (default: 2000)')
+            command.add_argument('--max-memory', type=int, metavar='BYTES', help='Memory limit (default: 1 GiB)')
+            command.add_argument('--max-output', type=int, metavar='BYTES', help='Output limit (default: no limit)')
         if name == 'run':
             command.add_argument('args', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -60,7 +68,14 @@ def main(argv=None):
     source = ''
     try:
         source = args.source.read_text(encoding='utf-8')
-        generated = compile_source(source, str(args.source))
+        base = args.source.resolve().parent
+        generated = compile_source(source, str(args.source), base)
+        options = {}
+        if args.command in ('build', 'run'):
+            limits = {k: getattr(args, 'max_' + k) for k in LIMITS if getattr(args, 'max_' + k) is not None}
+            if any(v < 0 for v in limits.values()):
+                raise RuntimeError('Limits must be zero or more.')
+            options = dict(filename=str(args.source), cc=args.cc, optimize=args.optimize, base=base, limits=limits)
         if args.command == 'check':
             print('VigilCode: checks passed.')
             return 0
@@ -76,11 +91,11 @@ def main(argv=None):
             output = args.output or Path('build') / args.source.stem
             if output.resolve() == args.source.resolve():
                 raise RuntimeError('Choose an output different from the source file.')
-            built = build(source, output, filename=str(args.source), cc=args.cc, optimize=args.optimize)
+            built = build(source, output, **options)
             print(f'Built {built}')
             return 0
         with tempfile.TemporaryDirectory(prefix='vigil-run-') as folder:
-            binary = build(source, Path(folder) / 'program', filename=str(args.source), cc=args.cc, optimize=args.optimize)
+            binary = build(source, Path(folder) / 'program', **options)
             values = args.args[1:] if args.args[:1] == ['--'] else args.args
             return subprocess.run([str(binary), *values], timeout=30).returncode
     except Diagnostic as error:

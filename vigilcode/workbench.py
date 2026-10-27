@@ -18,6 +18,8 @@ from .frontend import Diagnostic
 MAX_BODY = 256 * 1024
 MAX_OUTPUT = 64 * 1024
 RUN_SECONDS = 10
+# The workbench runs code as you type it, so it keeps tighter limits than vigil build.
+LIMITS = {'steps': 100_000_000, 'output': 1024 * 1024, 'memory': 256 * 1024 * 1024}
 PAGE = Path(__file__).with_name('workbench.html')
 
 
@@ -40,7 +42,7 @@ def run(source, args=(), optimize=False):
         return result
     with tempfile.TemporaryDirectory(prefix='vigil-workbench-') as folder:
         try:
-            binary = build(source, Path(folder) / 'program', filename='workbench', optimize=optimize)
+            binary = build(source, Path(folder) / 'program', filename='workbench', optimize=optimize, limits=LIMITS)
         except (RuntimeError, subprocess.TimeoutExpired) as error:
             return {'ok': False, 'diagnostics': [{'line': None, 'column': None, 'message': str(error)}]}
         try:

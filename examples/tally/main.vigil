@@ -1,0 +1,16 @@
+# Counts the words in a text file. Usage: vigil run examples/tally/main.vigil -- FILE
+use words
+
+work main() -> Int:
+    discern arg_count() != 1:
+        say("Usage: tally FILE")
+        return 2
+    match read_file(arg(0)):
+        ok text:
+            vow counts = count_words(text)
+            say(to_text(counts.words) + " words, " + to_text(counts.lines) + " lines")
+            say("longest: " + counts.longest)
+            return 0
+        fail message:
+            say(message)
+            return 1

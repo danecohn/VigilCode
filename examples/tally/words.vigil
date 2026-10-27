@@ -1,0 +1,19 @@
+record Counts:
+    words: Int
+    lines: Int
+    longest: Text
+
+work count_words(text: Text) -> Counts:
+    let words = 0
+    let lines = 0
+    let longest = ""
+    for line in split(text, "\n"):
+        vow cleaned = trim(line)
+        discern length(cleaned) > 0:
+            lines = lines + 1
+            for word in split(cleaned, " "):
+                discern length(word) > 0:
+                    words = words + 1
+                discern length(word) > length(longest):
+                    longest = word
+    return Counts(words, lines, longest)
