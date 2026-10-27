@@ -5,119 +5,256 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VigilCode Workbench</title>
 <style>
-/* Neutral placeholder tokens. Map these to the VigilTech palette once it is supplied. */
-:root { --bg:#faf9f6; --panel:#ffffff; --ink:#1f1d1a; --muted:#5c574f; --line:#d8d3c8; --accent:#5a2d3a; --accent-ink:#ffffff; --error:#9b1c1c; --ok:#1d5c34; --gutter:#f1eee6; }
-@media (prefers-color-scheme: dark) { :root { --bg:#17161a; --panel:#1f1e23; --ink:#ece9e2; --muted:#a9a49a; --line:#35333a; --accent:#d8a7b4; --accent-ink:#17161a; --error:#ff9b9b; --ok:#8fd6a4; --gutter:#1a191d; } }
+/* VigilTech look: night palette and Vigil Sans, from github.com/danecohn/vigilicons. */
+@font-face { font-family: "Vigil Sans"; font-weight: 400; font-display: swap; src: url("/fonts/VigilSans-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Vigil Sans"; font-weight: 700; font-display: swap; src: url("/fonts/VigilSans-Bold.woff2") format("woff2"); }
+:root {
+  --pink:#ff0058; --bg:#140812; --panel:#22101c; --raised:#2c1525; --ink:#fff4f8; --dim:#c9a3b4; --line:#ffffff1f;
+  --error:#ff7a9c; --ok:#7fe0a8; --keyword:#ff6f9f; --type:#f3c3d6; --string:#ffd08a; --number:#a8d8ff; --comment:#9a7d8b; --builtin:#e6a6ff;
+  --font:"Vigil Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  --mono:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
 * { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, sans-serif; display:flex; flex-direction:column; min-height:100vh; }
-header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); }
-h1 { font-size:1.1rem; margin:0 auto 0 0; font-weight:600; }
-button, select { font:inherit; padding:6px 14px; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--ink); cursor:pointer; }
-button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
-button:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
-main { flex:1; display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); gap:16px; padding:16px; }
-@media (max-width:800px) { main { grid-template-columns:1fr; } }
-.editor { display:flex; border:1px solid var(--line); border-radius:6px; background:var(--panel); min-height:360px; overflow:hidden; }
-#gutter { padding:10px 8px; background:var(--gutter); color:var(--muted); text-align:right; font:14px/1.5 ui-monospace, Menlo, Consolas, monospace; user-select:none; overflow:hidden; white-space:pre; }
+html, body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 var(--font); display:grid; grid-template-rows:auto 1fr auto; }
+header { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); }
+h1 { font-size:1.15rem; margin:0 auto 0 0; font-weight:700; letter-spacing:.01em; }
+h1 b { color:var(--pink); }
+h1 small { color:var(--dim); font-weight:400; font-size:.75rem; margin-left:6px; }
+button { font:inherit; font-size:.9rem; padding:6px 14px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); cursor:pointer; }
+button:hover { background:var(--raised); }
+button.primary { background:var(--pink); border-color:var(--pink); color:var(--bg); font-weight:700; }
+button.primary:hover { filter:brightness(1.08); }
+button:disabled { opacity:.5; cursor:default; }
+:focus-visible { outline:2px solid var(--pink); outline-offset:2px; }
+.layout { display:grid; grid-template-columns:220px minmax(0,1fr) minmax(280px,38%); min-height:0; }
+@media (max-width:900px) { .layout { grid-template-columns:1fr; grid-auto-rows:minmax(200px,auto); } }
+nav { border-right:1px solid var(--line); padding:12px 8px; overflow:auto; min-height:0; }
+nav h2, aside h2 { font-size:.75rem; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); margin:4px 8px 8px; font-weight:700; }
+#files { list-style:none; margin:0; padding:0; }
+#files button { width:100%; text-align:left; border:0; background:none; padding:4px 8px; border-radius:6px; font-family:var(--mono); font-size:.82rem; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#files button[aria-current="true"] { background:var(--raised); color:var(--ink); }
+#root { font-size:.75rem; color:var(--dim); margin:4px 8px 10px; overflow-wrap:anywhere; }
+.center { display:flex; flex-direction:column; min-height:0; padding:12px; gap:6px; }
+#filename { font-family:var(--mono); font-size:.85rem; color:var(--dim); }
+#filename .dirty { color:var(--pink); }
+.editor { position:relative; flex:1; display:flex; min-height:320px; border:1px solid var(--line); border-radius:10px; background:var(--panel); overflow:hidden; }
+#gutter { padding:12px 10px 12px 12px; color:var(--comment); text-align:right; font:13.5px/1.6 var(--mono); user-select:none; overflow:hidden; white-space:pre; border-right:1px solid var(--line); min-width:3.2em; }
 #gutter .bad { color:var(--error); font-weight:700; }
-#code { flex:1; border:0; resize:none; padding:10px; font:14px/1.5 ui-monospace, Menlo, Consolas, monospace; background:transparent; color:var(--ink); white-space:pre; overflow:auto; tab-size:4; }
-section h2 { font-size:.9rem; margin:0 0 6px; color:var(--muted); font-weight:600; text-transform:none; }
-pre, #problems { margin:0 0 16px; padding:10px; border:1px solid var(--line); border-radius:6px; background:var(--panel); min-height:3em; white-space:pre-wrap; overflow-wrap:anywhere; font:14px/1.5 ui-monospace, Menlo, Consolas, monospace; }
-#problems { list-style:none; font-family:inherit; }
-#problems button { border:0; background:none; padding:0; color:var(--error); text-align:left; text-decoration:underline; }
-#status { padding:8px 16px; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem; }
+.surface { position:relative; flex:1; min-width:0; }
+#hl, #code { position:absolute; inset:0; margin:0; padding:12px; font:13.5px/1.6 var(--mono); white-space:pre; tab-size:4; overflow:auto; border:0; }
+#hl { color:var(--ink); pointer-events:none; }
+#code { background:transparent; color:transparent; caret-color:var(--ink); resize:none; }
+#code::selection { background:#ff005855; color:transparent; }
+.k { color:var(--keyword); font-weight:600; } .t { color:var(--type); } .s { color:var(--string); } .n { color:var(--number); } .c { color:var(--comment); font-style:italic; } .b { color:var(--builtin); }
+.hint { color:var(--dim); font-size:.8rem; margin:0; }
+aside { border-left:1px solid var(--line); padding:12px; overflow:auto; min-height:0; }
+pre.box, #problems { margin:0 0 14px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); min-height:2.8em; white-space:pre-wrap; overflow-wrap:anywhere; font:13px/1.55 var(--mono); }
+#problems { list-style:none; font-family:var(--font); font-size:.88rem; }
+#problems li + li { margin-top:6px; }
+#problems button { border:0; background:none; padding:0; color:var(--error); text-align:left; text-decoration:underline; font-size:inherit; }
+#problems .none { color:var(--dim); }
+#args { width:100%; font:13px var(--mono); padding:6px 8px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--ink); margin-bottom:14px; }
+footer { display:flex; gap:16px; padding:6px 16px; border-top:1px solid var(--line); color:var(--dim); font-size:.82rem; }
 #status.fail { color:var(--error); } #status.pass { color:var(--ok); }
-.hint { color:var(--muted); font-size:.85rem; margin:6px 0 0; }
+footer span:last-child { margin-left:auto; }
 </style>
 </head>
 <body>
 <header>
-  <h1>VigilCode Workbench</h1>
-  <label for="file" class="hint">Open</label><input id="file" type="file" accept=".vigil,text/plain">
-  <button id="check" type="button">Check</button>
-  <button id="run" type="button" class="primary">Run</button>
-  <button id="save" type="button">Save</button>
+  <h1>VigilCode <b>Workbench</b><small>__VERSION__</small></h1>
+  <button id="new" type="button" title="New file">New</button>
+  <button id="save" type="button" title="Save (Ctrl or Cmd + S)">Save</button>
+  <button id="check" type="button" title="Check (Ctrl or Cmd + Shift + Enter)">Check</button>
+  <button id="run" type="button" class="primary" title="Run (Ctrl or Cmd + Enter)">Run</button>
 </header>
-<main>
-  <section aria-label="Editor">
-    <div class="editor"><div id="gutter" aria-hidden="true">1</div><textarea id="code" spellcheck="false" aria-label="VigilCode source" autocomplete="off" autocapitalize="off"></textarea></div>
-    <p class="hint">Run: Ctrl or Cmd + Enter. Tab inserts spaces; press Escape, then Tab, to move focus out of the editor.</p>
+<div class="layout">
+  <nav aria-label="Project files">
+    <h2>Project</h2>
+    <div id="root"></div>
+    <ul id="files"></ul>
+  </nav>
+  <section class="center" aria-label="Editor">
+    <div id="filename" aria-live="polite"></div>
+    <div class="editor">
+      <div id="gutter" aria-hidden="true">1</div>
+      <div class="surface">
+        <pre id="hl" aria-hidden="true"></pre>
+        <textarea id="code" spellcheck="false" aria-label="VigilCode source" autocomplete="off" autocapitalize="off" wrap="off"></textarea>
+      </div>
+    </div>
+    <p class="hint">Tab inserts four spaces. To move focus out of the editor, press Escape and then Tab.</p>
   </section>
-  <section aria-label="Results">
-    <h2>Problems</h2><ul id="problems" aria-live="polite"><li>None yet.</li></ul>
-    <h2>Output</h2><pre id="out" aria-live="polite"></pre>
-    <h2>Errors</h2><pre id="err"></pre>
-  </section>
-</main>
-<div id="status" role="status" aria-live="polite">Ready.</div>
+  <aside aria-label="Results">
+    <h2>Problems</h2><ul id="problems" aria-live="polite"><li class="none">None yet.</li></ul>
+    <h2><label for="args">Arguments</label></h2><input id="args" placeholder="separated by spaces" autocomplete="off">
+    <h2>Output</h2><pre id="out" class="box" aria-live="polite"></pre>
+    <h2>Errors</h2><pre id="err" class="box"></pre>
+  </aside>
+</div>
+<footer><span id="status" role="status" aria-live="polite">Ready.</span><span id="pos">Line 1, column 1</span></footer>
 <script>
+"use strict";
 const TOKEN = "__TOKEN__";
 const $ = id => document.getElementById(id);
 const code = $('code');
 const SAMPLE = 'work main() -> Int:\n    say("Peace be with you.")\n    return 0\n';
-let badLine = null, escaped = false;
-try { code.value = localStorage.getItem('vigilcode.draft') || SAMPLE; } catch (e) { code.value = SAMPLE; }
+const KEYWORDS = new Set('work record enum use match vow let discern otherwise while for in return witness covenant pass true false and or not'.split(' '));
+const BUILTINS = new Set('say length arg arg_count range slice find trim split join to_text parse_int parse_real to_real to_int push set some none ok fail read_line read_file write_file'.split(' '));
+let current = null, saved = '', badLine = null, escaped = false, hasProject = false;
 
-function gutter() {
-  const n = code.value.split('\n').length;
-  $('gutter').innerHTML = Array.from({length:n}, (_, i) => i + 1 === badLine ? '<span class="bad">' + (i + 1) + '</span>' : i + 1).join('\n');
-  $('gutter').scrollTop = code.scrollTop;
+function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function highlight(text) {
+  const out = [];
+  const re = /(#[^\n]*)|("(?:[^"\\\n]|\\.)*"?)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z_0-9]*)|([\s\S])/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const [all, comment, string, number, name] = m;
+    if (comment) out.push('<span class="c">' + escapeHtml(comment) + '</span>');
+    else if (string) out.push('<span class="s">' + escapeHtml(string) + '</span>');
+    else if (number) out.push('<span class="n">' + number + '</span>');
+    else if (name && KEYWORDS.has(name)) out.push('<span class="k">' + name + '</span>');
+    else if (name && BUILTINS.has(name)) out.push('<span class="b">' + name + '</span>');
+    else if (name && /^[A-Z]/.test(name)) out.push('<span class="t">' + name + '</span>');
+    else out.push(escapeHtml(all));
+  }
+  return out.join('') + '\n';
 }
+function refresh() {
+  const n = code.value.split('\n').length;
+  $('gutter').innerHTML = Array.from({length:n}, (_, i) => i + 1 === badLine ? '<span class="bad">' + (i + 1) + '</span>' : String(i + 1)).join('\n');
+  $('hl').innerHTML = highlight(code.value);
+  sync();
+  const name = current || 'Scratch (not saved to disk)';
+  $('filename').innerHTML = escapeHtml(name) + (dirty() ? ' <span class="dirty" title="Unsaved changes">●</span>' : '');
+  position();
+}
+function sync() { $('hl').scrollTop = code.scrollTop; $('hl').scrollLeft = code.scrollLeft; $('gutter').scrollTop = code.scrollTop; }
+function position() {
+  const before = code.value.slice(0, code.selectionStart).split('\n');
+  $('pos').textContent = 'Line ' + before.length + ', column ' + (before[before.length - 1].length + 1);
+}
+function dirty() { return current !== null && code.value !== saved; }
 function status(text, kind) { $('status').textContent = text; $('status').className = kind || ''; }
-function show(r) {
+async function call(path, body) {
+  const res = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json', 'X-Vigil-Token':TOKEN}, body:JSON.stringify(body || {})});
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+function showResult(r) {
   badLine = null;
   const list = $('problems'); list.textContent = '';
-  if (!r.diagnostics.length) { const li = document.createElement('li'); li.textContent = 'None.'; list.append(li); }
+  if (!r.diagnostics.length) { const li = document.createElement('li'); li.className = 'none'; li.textContent = 'None.'; list.append(li); }
   for (const d of r.diagnostics) {
     const li = document.createElement('li'), b = document.createElement('button');
     b.type = 'button';
-    b.textContent = (d.line ? 'Line ' + d.line + ', column ' + d.column + ': ' : '') + d.message;
-    if (d.line) { badLine = badLine || d.line; b.onclick = () => jump(d.line, d.column); }
+    const elsewhere = d.file && d.file !== current;
+    b.textContent = (d.file && elsewhere ? d.file + ', ' : '') + (d.line ? 'line ' + d.line + ', column ' + d.column + ': ' : '') + d.message;
+    if (d.line && !elsewhere) { badLine = badLine || d.line; b.onclick = () => jump(d.line, d.column); }
+    else if (d.line && elsewhere) b.onclick = async () => { if (await open(d.file)) jump(d.line, d.column); };
     li.append(b); list.append(li);
   }
   $('out').textContent = r.stdout || ''; $('err').textContent = r.stderr || '';
-  gutter();
+  refresh();
 }
 function jump(line, column) {
   const lines = code.value.split('\n');
   const at = lines.slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0) + Math.max(0, column - 1);
-  code.focus(); code.setSelectionRange(at, at);
-}
-async function call(path, extra) {
-  const res = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json', 'X-Vigil-Token':TOKEN}, body:JSON.stringify(Object.assign({source:code.value}, extra))});
-  if (!res.ok) throw new Error((await res.json()).error || res.statusText);
-  return res.json();
+  code.focus(); code.setSelectionRange(at, at); position();
 }
 async function act(path, label) {
   status(label + '…');
+  for (const id of ['run', 'check']) $(id).disabled = true;
   try {
-    const r = await call(path);
-    show(r);
-    if (!r.diagnostics.length && path === '/api/check') status('Checks passed.', 'pass');
-    else if (r.diagnostics.length) status(r.diagnostics.length + ' problem to fix.', 'fail');
-    else status(r.ok ? 'Finished with exit code 0.' : 'Finished with exit code ' + r.exit + '.', r.ok ? 'pass' : 'fail');
-  } catch (e) { status('Could not reach the workbench: ' + e.message, 'fail'); }
+    const args = $('args').value.trim() ? $('args').value.trim().split(/\s+/) : [];
+    const r = await call(path, {source: code.value, path: current, args});
+    showResult(r);
+    if (r.diagnostics.length) status(r.diagnostics.length === 1 ? 'One problem to fix.' : r.diagnostics.length + ' problems to fix.', 'fail');
+    else if (path === '/api/check') status('Checks passed.', 'pass');
+    else status(r.exit === null ? 'Stopped: the program ran too long.' : 'Finished with exit code ' + r.exit + '.', r.ok ? 'pass' : 'fail');
+  } catch (e) { status(e.message, 'fail'); }
+  finally { for (const id of ['run', 'check']) $(id).disabled = false; }
+}
+async function listFiles() {
+  const r = await call('/api/files');
+  hasProject = !!r.root;
+  $('root').textContent = r.root || 'No project folder.';
+  const list = $('files'); list.textContent = '';
+  for (const f of r.files) {
+    const li = document.createElement('li'), b = document.createElement('button');
+    b.type = 'button'; b.textContent = f; b.title = f;
+    if (f === current) b.setAttribute('aria-current', 'true');
+    b.onclick = () => open(f);
+    li.append(b); list.append(li);
+  }
+  $('new').disabled = $('save').disabled = !hasProject;
+  return r.files;
+}
+async function open(path) {
+  if (dirty() && !confirm('Discard unsaved changes to ' + current + '?')) return false;
+  try {
+    const r = await call('/api/open', {path});
+    current = path; code.value = saved = r.source; badLine = null;
+    try { localStorage.setItem('vigilcode.last', path); } catch (e) {}
+    refresh(); await listFiles(); status('Opened ' + path + '.');
+    return true;
+  } catch (e) { status(e.message, 'fail'); return false; }
+}
+async function save() {
+  if (!hasProject) return;
+  if (current === null) return newFile(code.value);
+  try { await call('/api/save', {path: current, source: code.value}); saved = code.value; refresh(); status('Saved ' + current + '.', 'pass'); }
+  catch (e) { status(e.message, 'fail'); }
+}
+async function newFile(source) {
+  let name = prompt('New file name (inside the project folder):', 'program.vigil');
+  if (!name) return;
+  if (!name.endsWith('.vigil')) name += '.vigil';
+  try {
+    await call('/api/new', {path: name, source: typeof source === 'string' ? source : SAMPLE});
+    current = null; saved = '';
+    await open(name);
+  } catch (e) { status(e.message, 'fail'); }
 }
 $('check').onclick = () => act('/api/check', 'Checking');
 $('run').onclick = () => act('/api/run', 'Running');
-$('save').onclick = () => {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([code.value], {type:'text/plain'}));
-  a.download = 'program.vigil'; a.click(); URL.revokeObjectURL(a.href);
-};
-$('file').onchange = async e => { const f = e.target.files[0]; if (f) { code.value = await f.text(); gutter(); } };
-code.addEventListener('input', () => {
-  gutter();
-  try { localStorage.setItem('vigilcode.draft', code.value); } catch (e) {}
+$('save').onclick = save;
+$('new').onclick = () => newFile();
+code.addEventListener('input', () => { refresh(); if (current === null) { try { localStorage.setItem('vigilcode.draft', code.value); } catch (e) {} } });
+code.addEventListener('scroll', sync);
+code.addEventListener('click', position);
+code.addEventListener('keyup', position);
+document.addEventListener('keydown', e => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === 'Enter') { e.preventDefault(); (e.shiftKey ? $('check') : $('run')).click(); }
+  else if (mod && (e.key === 's' || e.key === 'S')) { e.preventDefault(); save(); }
 });
-code.addEventListener('scroll', () => { $('gutter').scrollTop = code.scrollTop; });
 code.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); $('run').click(); }
-  else if (e.key === 'Escape') escaped = true;
-  else if (e.key === 'Tab' && !escaped && !e.shiftKey) { e.preventDefault(); document.execCommand('insertText', false, '    '); }
-  else escaped = false;
+  if (e.key === 'Escape') { escaped = true; return; }
+  if (e.key === 'Tab' && !escaped && !e.shiftKey && !e.ctrlKey && !e.metaKey) { e.preventDefault(); document.execCommand('insertText', false, '    '); }
+  else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+    // Keep the current indentation, and indent one more level after a line ending in a colon.
+    const start = code.selectionStart, line = code.value.slice(0, start).split('\n').pop();
+    let indent = line.match(/^ */)[0];
+    if (/:\s*$/.test(line.replace(/#.*$/, ''))) indent += '    ';
+    e.preventDefault(); document.execCommand('insertText', false, '\n' + indent);
+  }
+  escaped = false;
 });
-gutter();
+window.addEventListener('beforeunload', e => { if (dirty()) { e.preventDefault(); e.returnValue = ''; } });
+(async () => {
+  try {
+    const files = await listFiles();
+    let last = null;
+    try { last = localStorage.getItem('vigilcode.last'); } catch (e) {}
+    const first = files.includes(last) ? last : files.find(f => /(^|\/)main\.vigil$/.test(f)) || files[0];
+    if (first) { await open(first); return; }
+  } catch (e) { status(e.message, 'fail'); }
+  try { code.value = localStorage.getItem('vigilcode.draft') || SAMPLE; } catch (e) { code.value = SAMPLE; }
+  refresh();
+})();
 </script>
 </body>
 </html>

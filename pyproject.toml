@@ -15,4 +15,4 @@ vigil = "vigilcode.cli:main"
 vigilcode = "vigilcode.cli:main"
 
 [tool.setuptools.package-data]
-vigilcode = ["runtime.h", "workbench.html"]
+vigilcode = ["runtime.h", "workbench.html", "fonts/*"]

@@ -44,6 +44,7 @@ def main(argv=None):
     parser.add_argument('--version', action='version', version='VigilCode ' + __version__)
     commands = parser.add_subparsers(dest='command', required=True)
     workbench = commands.add_parser('workbench', help='Open the local editor in your browser')
+    workbench.add_argument('folder', nargs='?', type=Path, help='Project folder (default: the current folder)')
     workbench.add_argument('--port', type=int, default=8765)
     workbench.add_argument('--no-open', action='store_true', help='Do not open a browser window')
     for name in ['check', 'emit-c', 'build', 'run']:
@@ -63,7 +64,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.command == 'workbench':
         from .workbench import serve
-        serve(args.port, open_browser=not args.no_open)
+        try:
+            serve(args.port, open_browser=not args.no_open, root=args.folder)
+        except (OSError, RuntimeError) as error:
+            print(f'VigilCode: {error}', file=sys.stderr)
+            return 1
         return 0
     source = ''
     try:

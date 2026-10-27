@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import http.client
 import json
+import shutil
 import socket
+import tempfile
+from pathlib import Path
 import threading
 import unittest
-from vigilcode.workbench import make_server
+from vigilcode.workbench import MAX_BODY, make_server
 
 HELLO = 'work main() -> Int:\n    say("hi")\n    return 0\n'
 
@@ -12,7 +15,12 @@ HELLO = 'work main() -> Int:\n    say("hi")\n    return 0\n'
 class WorkbenchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server = make_server(0)
+        cls.folder = tempfile.mkdtemp()
+        Path(cls.folder, 'lib').mkdir()
+        Path(cls.folder, 'lib', 'greet.vigil').write_text('work greeting() -> Text:\n    return "Pax"\n', encoding='utf-8')
+        Path(cls.folder, 'lib', 'main.vigil').write_text('use greet\nwork main() -> Int:\n    say(greeting())\n    return 0\n', encoding='utf-8')
+        Path(cls.folder, 'notes.txt').write_text('not code', encoding='utf-8')
+        cls.server = make_server(0, cls.folder)
         cls.port = cls.server.server_port
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
 
@@ -20,6 +28,7 @@ class WorkbenchTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
         cls.server.server_close()
+        shutil.rmtree(cls.folder, ignore_errors=True)
 
     def request(self, method, path, body=None, token=True, host=None, raw=None):
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=30)
@@ -36,12 +45,12 @@ class WorkbenchTests(unittest.TestCase):
     def oversized_status(self):
         # Only the declared length matters; the server must refuse before reading any body.
         with socket.create_connection(('127.0.0.1', self.port), timeout=10) as sock:
-            head = f'POST /api/run HTTP/1.1\r\nHost: 127.0.0.1:{self.port}\r\nX-Vigil-Token: {self.server.token}\r\nContent-Length: {256 * 1024 + 1}\r\n\r\n'
+            head = f'POST /api/run HTTP/1.1\r\nHost: 127.0.0.1:{self.port}\r\nX-Vigil-Token: {self.server.token}\r\nContent-Length: {MAX_BODY + 1}\r\n\r\n'
             sock.sendall(head.encode())
             return int(sock.recv(64).split()[1])
 
-    def api(self, path, **body):
-        status, payload = self.request('POST', path, body)
+    def api(self, route, **body):
+        status, payload = self.request('POST', route, body)
         self.assertEqual(status, 200, payload)
         return json.loads(payload)
 
@@ -82,6 +91,48 @@ class WorkbenchTests(unittest.TestCase):
         self.assertEqual(self.oversized_status(), 413)
         self.assertEqual(self.request('POST', '/api/other', {'source': HELLO})[0], 404)
         self.assertEqual(self.request('GET', '/api/run')[0], 404)
+
+    def test_project_files(self):
+        listing = self.api('/api/files')
+        self.assertLessEqual({'lib/greet.vigil', 'lib/main.vigil'}, set(listing['files']))
+        self.assertNotIn('notes.txt', listing['files'])
+        source = self.api('/api/open', path='lib/main.vigil')['source']
+        # Running a project file resolves its modules beside it.
+        self.assertEqual(self.api('/api/run', source=source, path='lib/main.vigil')['stdout'], 'Pax\n')
+        self.api('/api/new', path='fresh.vigil', source=HELLO)
+        self.assertEqual(self.api('/api/open', path='fresh.vigil')['source'], HELLO)
+        self.api('/api/save', path='fresh.vigil', source=HELLO + '# saved\n')
+        self.assertTrue(Path(self.folder, 'fresh.vigil').read_text(encoding='utf-8').endswith('# saved\n'))
+        self.assertEqual(self.request('POST', '/api/new', {'path': 'fresh.vigil', 'source': ''})[0], 400)
+        reader = 'work main() -> Int:\n    match read_file("notes.txt"):\n        ok t:\n            say(t)\n        fail m:\n            say(m)\n    return 0\n'
+        self.assertEqual(self.api('/api/run', source=reader, path='lib/reader.vigil')['stdout'], 'not code\n')
+
+    def test_module_errors_name_their_file(self):
+        Path(self.folder, 'lib', 'broken.vigil').write_text('work broken() -> Int:\n    return "no"\n', encoding='utf-8')
+        result = self.api('/api/check', source='use broken\nwork main() -> Int:\n    return 0\n', path='lib/probe.vigil')
+        self.assertEqual(result['diagnostics'][0]['file'], 'lib/broken.vigil')
+        self.assertEqual(result['diagnostics'][0]['line'], 2)
+
+    def test_files_stay_inside_the_project(self):
+        for path in ('../escape.vigil', '/etc/passwd', 'notes.txt', 'lib', '', 'a\u0000.vigil'):
+            with self.subTest(path=path):
+                status, _ = self.request('POST', '/api/open', {'path': path})
+                self.assertEqual(status, 400)
+                status, _ = self.request('POST', '/api/save', {'path': path, 'source': 'x'})
+                self.assertEqual(status, 400)
+        self.assertFalse(Path(self.folder).parent.joinpath('escape.vigil').exists())
+        try:
+            Path(self.folder, 'link.vigil').symlink_to(Path(tempfile.gettempdir(), 'outside.vigil'))
+        except (OSError, NotImplementedError):
+            return
+        self.assertEqual(self.request('POST', '/api/save', {'path': 'link.vigil', 'source': 'x'})[0], 400)
+        self.assertNotIn('link.vigil', self.api('/api/files')['files'])
+
+    def test_fonts_are_served(self):
+        status, data = self.request('GET', '/fonts/VigilSans-Regular.woff2')
+        self.assertEqual(status, 200)
+        self.assertEqual(data[:4], b'wOF2')
+        self.assertEqual(self.request('GET', '/fonts/../workbench.py')[0], 404)
 
     def test_runaway_program_is_stopped(self):
         source = 'work main() -> Int:\n    while true:\n        pass\n    return 0\n'
