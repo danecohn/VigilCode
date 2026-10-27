@@ -136,7 +136,7 @@ class Compiler:
             if work.result == 'Unit' and not returns:
                 self.line('vt_depth--;')
             self.line('}')
-        self.line('int main(int argc, char **argv) { vt_argc=argc; vt_argv=argv; atexit(vt_cleanup);')
+        self.line('int main(int argc, char **argv) { vt_init(argc, argv); atexit(vt_cleanup);')
         if main.result == 'Int':
             self.line('int64_t result=vt_work_main(); if(result<0 || result>255) vt_fail("main", "main must return an exit code from 0 to 255."); return (int)result; }')
         else:

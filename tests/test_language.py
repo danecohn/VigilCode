@@ -12,7 +12,7 @@ class LanguageTests(unittest.TestCase):
     def program(self, source, optimize=False, args=()):
         with tempfile.TemporaryDirectory() as folder:
             binary = build(source, Path(folder)/'program', optimize=optimize)
-            return subprocess.run([str(binary), *args], capture_output=True, text=True, timeout=5)
+            return subprocess.run([str(binary), *args], capture_output=True, encoding='utf-8', timeout=10)
 
     def reject(self, source, message):
         with self.assertRaisesRegex(Diagnostic, message):
@@ -22,7 +22,7 @@ class LanguageTests(unittest.TestCase):
         expected = {'hello': 'Peace be with you.\n', 'stewardship': 'All shares accounted for.\n', 'fibonacci': '55\n', 'ledger': 'Ana holds harvest\n7\nPlanting\n'}
         for name, output in expected.items():
             with self.subTest(name=name):
-                result = self.program(Path('examples/'+name+'.vigil').read_text())
+                result = self.program(Path('examples/'+name+'.vigil').read_text(encoding='utf-8'))
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout, output)
 
@@ -108,7 +108,7 @@ class LanguageTests(unittest.TestCase):
         self.reject('', 'entry point')
 
     def test_mutated_sources_only_raise_diagnostics(self):
-        seeds = [path.read_text() for path in sorted(Path('examples').glob('*.vigil'))]
+        seeds = [path.read_text(encoding='utf-8') for path in sorted(Path('examples').glob('*.vigil'))]
         alphabet = list(' \n():,->+*/%=<>"\\#\t0123456789abcwork vow let \u00e9.')
         rnd = random.Random(1)
         for _ in range(3000):

@@ -10,6 +10,10 @@
 #include <string.h>
 #include <math.h>
 #include <limits.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 static int vt_argc;
 static char **vt_argv;
@@ -18,6 +22,13 @@ static size_t vt_memory=0;
 typedef struct vt_allocation { struct vt_allocation *next; } vt_allocation;
 static vt_allocation *vt_allocations=NULL;
 static void vt_cleanup(void) { while(vt_allocations) { vt_allocation *next=vt_allocations->next; free(vt_allocations); vt_allocations=next; } }
+/* Write bytes exactly as given (UTF-8, \n line endings) on every platform. */
+static void vt_init(int argc, char **argv) {
+    vt_argc=argc; vt_argv=argv;
+#ifdef _WIN32
+    _setmode(_fileno(stdout), _O_BINARY); _setmode(_fileno(stderr), _O_BINARY);
+#endif
+}
 static void vt_fail(const char *where, const char *message) {
     fprintf(stderr,"%s: VigilCode: %s\n",where,message); exit(1);
 }
